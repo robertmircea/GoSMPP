@@ -5,9 +5,9 @@
 package smpp
 
 import (
-	"os"
 	"reflect"
 	"fmt"
+	"errors"
 )
 
 // Transmitter type
@@ -16,15 +16,15 @@ type Transmitter struct {
 }
 
 // Submit SM
-func (tx *Transmitter) SubmitSM(dest, msg string, params Params, optional ...OptParams) (sequence uint32, msgId string, err os.Error) {
+func (tx *Transmitter) SubmitSM(dest, msg string, params Params, optional ...OptParams) (sequence uint32, msgId string, err error) {
 	// Check connected and bound
 	if !tx.connected || !tx.bound {
-		err = os.NewError("SubmitSM: A bound connection is required to submit a message")
+		err = errors.New("SubmitSM: A bound connection is required to submit a message")
 		return
 	}
 	// Check destination number and message
 	if dest == "" {
-		err = os.NewError("SubmitSM: A destination number is required and should not be null")
+		err = errors.New("SubmitSM: A destination number is required and should not be null")
 		return
 	}
 	// Merge params with defaults
@@ -33,7 +33,7 @@ func (tx *Transmitter) SubmitSM(dest, msg string, params Params, optional ...Opt
 	tx.sequence ++
 	// PDU header
 	hdr := new(PDUHeader)
-	hdr.CmdLength = 34
+	hdr.CmdLength = 33
 	hdr.CmdId     = CMD_SUBMIT_SM
 	hdr.CmdStatus = STATUS_ESME_ROK
 	hdr.Sequence  = tx.sequence
@@ -41,7 +41,7 @@ func (tx *Transmitter) SubmitSM(dest, msg string, params Params, optional ...Opt
 	paramOK := false
 	defer func() {
 		if !paramOK && recover() != nil {
-			err = os.NewError("SubmitSM: Panic, invalid params")
+			err = errors.New("SubmitSM: Panic, invalid params")
 			return
 		}
 	}()
@@ -73,25 +73,26 @@ func (tx *Transmitter) SubmitSM(dest, msg string, params Params, optional ...Opt
 	hdr.CmdLength += uint32(len(pdu.SchedDelTime))
 	hdr.CmdLength += uint32(len(pdu.ValidityPeriod))
 	hdr.CmdLength += uint32(len(pdu.ShortMessage))
+
 	// Calculate size of optional params
 	if len(optional) > 0 && len(optional[0]) > 0 {
 		pdu.Optional = optional[0]
 		for _, val := range optional[0] {
-			v := reflect.NewValue(val)
-			switch t := v.(type) {
+			v := reflect.TypeOf(val)
+			switch v.Kind() {
 				default:
-					err = os.NewError("SubmitSM: Invalid optional param format")
+					err = errors.New("SubmitSM: Invalid optional param format")
 					return
-				case *reflect.StringValue:
+				case reflect.String:
 					hdr.CmdLength += uint32(len(val.(string)))
 					pdu.OptionalLen += uint32(len(val.(string)))
-				case *reflect.Uint8Value:
+				case reflect.Uint8:
 					hdr.CmdLength ++
 					pdu.OptionalLen ++
-				case *reflect.Uint16Value:
+				case reflect.Uint16:
 					hdr.CmdLength += 2
 					pdu.OptionalLen += 2
-				case *reflect.Uint32Value:
+				case reflect.Uint32:
 					hdr.CmdLength += 4
 					pdu.OptionalLen += 4
 			}
@@ -99,7 +100,7 @@ func (tx *Transmitter) SubmitSM(dest, msg string, params Params, optional ...Opt
 			hdr.CmdLength += 4
 			pdu.OptionalLen += 4
 		}
-	}
+	} 
 	// Params were fine 'disable' the recover
 	paramOK = true
 	// Send PDU
@@ -114,7 +115,7 @@ func (tx *Transmitter) SubmitSM(dest, msg string, params Params, optional ...Opt
 	} else {
 		rpdu, err := tx.GetResp(CMD_SUBMIT_SM_RESP, tx.sequence)
 		if err != nil {
-			return
+			return sequence, msgId, err
 		}
 		s := rpdu.GetStruct()
 		msgId = s.(PDUSubmitSMResp).MessageId
@@ -123,15 +124,15 @@ func (tx *Transmitter) SubmitSM(dest, msg string, params Params, optional ...Opt
 }
 
 // Submit Multi
-func (tx *Transmitter) SubmitMulti(destNum, destList []string, msg string, params Params, optional ...OptParams) (sequence uint32, msgId string, unsuccess []string, err os.Error) {
+func (tx *Transmitter) SubmitMulti(destNum, destList []string, msg string, params Params, optional ...OptParams) (sequence uint32, msgId string, unsuccess []string, err error) {
 	// Check connected and bound
 	if !tx.connected || !tx.bound {
-		err = os.NewError("SubmitMulti: A bound connection is required to submit a message")
+		err = errors.New("SubmitMulti: A bound connection is required to submit a message")
 		return
 	}
 	// Check destination number and message
 	if len(destNum) == 0 && len(destList) == 0 {
-		err = os.NewError("SubmitMulti: At least 1 destination number or list is required")
+		err = errors.New("SubmitMulti: At least 1 destination number or list is required")
 		return
 	}
 	// Merge params with defaults
@@ -148,7 +149,7 @@ func (tx *Transmitter) SubmitMulti(destNum, destList []string, msg string, param
 	paramOK := false
 	defer func() {
 		if !paramOK && recover() != nil {
-			err = os.NewError("SubmitMulti: Panic, invalid params")
+			err = errors.New("SubmitMulti: Panic, invalid params")
 			return
 		}
 	}()
@@ -197,21 +198,21 @@ func (tx *Transmitter) SubmitMulti(destNum, destList []string, msg string, param
 	if len(optional) > 0 && len(optional[0]) > 0 {
 		pdu.Optional = optional[0]
 		for _, val := range optional[0] {
-			v := reflect.NewValue(val)
-			switch t := v.(type) {
+			v := reflect.ValueOf(val)
+			switch v.Kind() {
 				default:
-					err = os.NewError("SubmitMulti: Invalid optional param format")
+					err = errors.New("SubmitMulti: Invalid optional param format")
 					return
-				case *reflect.StringValue:
+				case reflect.String:
 					hdr.CmdLength += uint32(len(val.(string)))
 					pdu.OptionalLen += uint32(len(val.(string)))
-				case *reflect.Uint8Value:
+				case reflect.Uint8:
 					hdr.CmdLength ++
 					pdu.OptionalLen ++
-				case *reflect.Uint16Value:
+				case reflect.Uint16:
 					hdr.CmdLength += 2
 					pdu.OptionalLen += 2
-				case *reflect.Uint32Value:
+				case reflect.Uint32:
 					hdr.CmdLength += 4
 					pdu.OptionalLen += 4
 			}
@@ -234,8 +235,8 @@ func (tx *Transmitter) SubmitMulti(destNum, destList []string, msg string, param
 	} else {
 		rpdu, err := tx.GetResp(CMD_SUBMIT_MULTI_RESP, tx.sequence)
 		if err != nil {
-		fmt.Printf("Result: %#v, %#v\n", rpdu, err)
-			return 
+			fmt.Printf("Result: %#v, %#v\n", rpdu, err)
+			return sequence, msgId, unsuccess, err 
 		}
 		s := rpdu.GetStruct()
 		msgId     = s.(PDUSubmitMultiResp).MessageId
